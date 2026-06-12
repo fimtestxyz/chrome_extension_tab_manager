@@ -1,0 +1,71 @@
+{
+  "manifest_version": 3,
+  "name": "Tab Workspace Manager",
+  "version": "1.0.0",
+  "description": "Organize, group, and save browser tabs into workspaces. Switch contexts instantly and boost productivity.",
+  "author": "Your Name",
+  "homepage_url": "https://github.com/yourusername/tab-workspace-manager",
+
+  "permissions": [
+    "tabs",
+    "tabGroups",
+    "storage",
+    "sidePanel",
+    "alarms",
+    "contextMenus"
+  ],
+
+  "action": {
+    "default_title": "Tab Workspace Manager",
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "assets/icons/icon-16.png",
+      "32": "assets/icons/icon-32.png",
+      "48": "assets/icons/icon-48.png",
+      "128": "assets/icons/icon-128.png"
+    }
+  },
+
+  "side_panel": {
+    "default_title": "Tab Workspaces",
+    "default_path": "sidepanel/sidepanel.html"
+  },
+
+  "background": {
+    "service_worker": "background/service-worker.js"
+  },
+
+  "commands": {
+    "open-sidepanel": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+K",
+        "mac": "Command+Shift+K"
+      },
+      "description": "Open workspace sidebar",
+      "global": false
+    },
+    "search-tabs": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+F",
+        "mac": "Command+Shift+F"
+      },
+      "description": "Search and jump to tab"
+    },
+    "quick-save": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+S",
+        "mac": "Command+Shift+S"
+      },
+      "description": "Save current tabs as workspace"
+    }
+  },
+
+  "icons": {
+    "16": "assets/icons/icon-16.png",
+    "32": "assets/icons/icon-32.png",
+    "48": "assets/icons/icon-48.png",
+    "128": "assets/icons/icon-128.png"
+  },
+
+  "minimum_chrome_version": "114"
+}
