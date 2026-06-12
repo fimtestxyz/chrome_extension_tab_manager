@@ -17,7 +17,7 @@
           <rect x="3" y="14" width="7" height="7" rx="1"></rect>
           <rect x="14" y="14" width="7" height="7" rx="1"></rect>
         </svg>
-        Tab Workspaces
+        Tab Workspace
       </h1>
       <button class="icon-btn settings-btn" id="settingsBtn" title="Settings">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -27,18 +27,24 @@
       </button>
     </header>
 
+    <!-- Tab navigation for Workspaces / Launch Groups -->
+    <div class="tabs-navigation">
+      <button class="nav-tab active" id="tabWorkspacesBtn">Workspaces</button>
+      <button class="nav-tab" id="tabLaunchGroupsBtn">Quick Launch 🚀</button>
+    </div>
+
     <!-- Search Bar -->
     <div class="search-container">
       <svg class="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <circle cx="11" cy="11" r="8"></circle>
         <path d="m21 21-4.35-4.35"></path>
       </svg>
-      <input type="text" id="searchInput" class="search-input" placeholder="Search tabs..." autocomplete="off">
+      <input type="text" id="searchInput" class="search-input" placeholder="Search tabs or groups..." autocomplete="off">
       <kbd class="kbd">⌘K</kbd>
     </div>
 
     <!-- Quick Actions -->
-    <div class="quick-actions">
+    <div class="quick-actions" id="workspacesActions">
       <button class="btn btn-primary" id="saveWorkspaceBtn">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
@@ -55,6 +61,23 @@
           <rect x="14" y="14" width="7" height="7" rx="1"></rect>
         </svg>
         Auto-Group
+      </button>
+    </div>
+
+    <div class="quick-actions hidden" id="launchGroupsActions">
+      <button class="btn btn-primary" id="createLaunchGroupBtn">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 5v14M5 12h14"></path>
+        </svg>
+        Create Group
+      </button>
+      <button class="btn btn-secondary" id="templatesBtn">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+          <polyline points="2 17 12 22 22 17"></polyline>
+          <polyline points="2 12 12 17 22 12"></polyline>
+        </svg>
+        Templates
       </button>
     </div>
 
@@ -93,14 +116,30 @@
           </svg>
           <h3>No workspaces yet</h3>
           <p>Save your current tabs to create your first workspace</p>
-          <button class="btn btn-primary" id="emptyStateSaveBtn">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
-              <polyline points="17 21 17 13 7 13 7 21"></polyline>
-              <polyline points="7 3 7 8 15 8"></polyline>
-            </svg>
-            Save Current Tabs
-          </button>
+          <button class="btn btn-primary" id="emptyStateSaveBtn">Save Current Tabs</button>
+        </div>
+      </div>
+
+      <!-- Quick Launch Groups List -->
+      <div id="launchGroupList" class="launch-group-list hidden">
+        <div class="section-header">
+          <h2>Quick Launch Groups</h2>
+        </div>
+        <div id="launchGroupItems"></div>
+
+        <!-- Empty state -->
+        <div id="launchEmptyState" class="empty-state">
+          <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+            <polyline points="2 17 12 22 22 17"></polyline>
+            <polyline points="2 12 12 17 22 12"></polyline>
+          </svg>
+          <h3>No launch groups yet</h3>
+          <p>Save groups of websites to open them rapidly in one click</p>
+          <div style="display:flex; gap:8px;">
+            <button class="btn btn-primary" id="useTemplatesBtn">Browse Templates</button>
+            <button class="btn btn-secondary" id="createFirstGroupBtn">Create Group</button>
+          </div>
         </div>
       </div>
     </main>
@@ -113,6 +152,60 @@
         <div class="modal-actions">
           <button class="btn btn-secondary" id="cancelSaveBtn">Cancel</button>
           <button class="btn btn-primary" id="confirmSaveBtn">Save</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal for creating Quick Launch Group -->
+    <div id="createLaunchGroupModal" class="modal hidden">
+      <div class="modal-content">
+        <h2>Create Launch Group</h2>
+        <div class="form-group">
+          <label>Group Name</label>
+          <input type="text" id="launchGroupNameInput" class="input" placeholder="e.g., Pre-Market Scan" required>
+        </div>
+        <div class="form-group">
+          <label>Websites URLs (one per line)</label>
+          <textarea id="launchGroupUrlsInput" class="input textarea" placeholder="https://tradingview.com&#10;https://reuters.com" rows="6" required></textarea>
+        </div>
+        <div class="form-group row">
+          <div style="flex: 1;">
+            <label>Icon / Emoji</label>
+            <input type="text" id="launchGroupIconInput" class="input" placeholder="📈" style="text-align: center;">
+          </div>
+          <div style="flex: 1;">
+            <label>Color</label>
+            <select id="launchGroupColorInput" class="select input">
+              <option value="blue">Blue</option>
+              <option value="red">Red</option>
+              <option value="grey">Grey</option>
+              <option value="orange">Orange</option>
+              <option value="green">Green</option>
+              <option value="purple">Purple</option>
+              <option value="cyan">Cyan</option>
+              <option value="yellow">Yellow</option>
+              <option value="pink">Pink</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Default Auto-Refresh (seconds)</label>
+          <input type="number" id="launchGroupRefreshInput" class="input" placeholder="300" min="0" value="0">
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-secondary" id="cancelCreateGroupBtn">Cancel</button>
+          <button class="btn btn-primary" id="confirmCreateGroupBtn">Create</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Templates Modal -->
+    <div id="templatesModal" class="modal hidden">
+      <div class="modal-content" style="max-width: 500px;">
+        <h2>Select Pre-built Template</h2>
+        <div id="templateList" class="template-list-container"></div>
+        <div class="modal-actions" style="margin-top: 16px;">
+          <button class="btn btn-secondary" id="closeTemplatesBtn">Close</button>
         </div>
       </div>
     </div>
