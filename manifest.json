@@ -41,8 +41,7 @@
         "default": "Ctrl+Shift+K",
         "mac": "Command+Shift+K"
       },
-      "description": "Open workspace sidebar",
-      "global": false
+      "description": "Open workspace sidebar"
     },
     "search-tabs": {
       "suggested_key": {
@@ -57,6 +56,19 @@
         "mac": "Command+Shift+S"
       },
       "description": "Save current tabs as workspace"
+    },
+    "quick-launch": {
+      "suggested_key": {
+        "default": "Alt+Shift+L",
+        "mac": "Alt+Shift+L"
+      },
+      "description": "Quick launch group picker"
+    },
+    "refresh-all": {
+      "description": "Refresh all tabs in active group"
+    },
+    "pause-refresh": {
+      "description": "Pause/resume all auto-refresh"
     }
   },
 

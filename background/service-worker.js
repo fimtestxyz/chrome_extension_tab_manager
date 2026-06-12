@@ -8,11 +8,12 @@ class StorageManager {
   constructor() {
     this.DEFAULTS = {
       workspaces: {},
+      launchGroups: {},
       settings: {
         autoGroup: true,
         theme: 'light',
         hibernateEnabled: false,
-        hibernateAfter: 30, // minutes
+        hibernateAfter: 30,
         showTabCount: true,
         groupByDefault: true
       },
@@ -20,6 +21,7 @@ class StorageManager {
         totalTabsSaved: 0,
         workspaceCount: 0,
         totalRestores: 0,
+        totalLaunches: 0,
         extensionInstalled: Date.now()
       }
     };
@@ -252,6 +254,426 @@ class WorkspaceManager {
 
   async renameWorkspace(id, newName) {
     await this.storage.updateWorkspace(id, { name: newName });
+  }
+}
+
+// ============================================================================
+// LaunchGroupManager - Quick Launch URL groups for traders/monitors
+// ============================================================================
+class LaunchGroupManager {
+  constructor(storageManager) {
+    this.storage = storageManager;
+
+    // Site intelligence: auto-suggest refresh intervals & pin status
+    this.SITE_INTELLIGENCE = {
+      'tradingview.com':   { refresh: 60,  pinned: true,  category: 'charts' },
+      'finviz.com':        { refresh: 300, pinned: false, category: 'data' },
+      'reuters.com':       { refresh: 60,  pinned: false, category: 'news' },
+      'bloomberg.com':     { refresh: 60,  pinned: false, category: 'news' },
+      'cnbc.com':          { refresh: 60,  pinned: false, category: 'news' },
+      'wsj.com':           { refresh: 60,  pinned: false, category: 'news' },
+      'ft.com':            { refresh: 60,  pinned: false, category: 'news' },
+      'marketwatch.com':   { refresh: 60,  pinned: false, category: 'news' },
+      'forexfactory.com':  { refresh: 300, pinned: true,  category: 'calendar' },
+      'investing.com':     { refresh: 300, pinned: true,  category: 'calendar' },
+      'coingecko.com':     { refresh: 30,  pinned: false, category: 'crypto' },
+      'coinmarketcap.com': { refresh: 60,  pinned: false, category: 'crypto' },
+      'dexscreener.com':   { refresh: 30,  pinned: false, category: 'crypto' },
+      'coinglass.com':     { refresh: 60,  pinned: false, category: 'crypto' },
+      'stocktwits.com':    { refresh: 60,  pinned: false, category: 'sentiment' },
+      'seekingalpha.com':  { refresh: 0,   pinned: false, category: 'research' },
+      'sec.gov':           { refresh: 0,   pinned: false, category: 'research' },
+      'tipranks.com':      { refresh: 0,   pinned: false, category: 'research' },
+      'macrotrends.net':   { refresh: 0,   pinned: false, category: 'research' },
+      'yahoo.com':         { refresh: 300, pinned: false, category: 'data' },
+      'finance.yahoo.com': { refresh: 300, pinned: false, category: 'data' },
+    };
+
+    // Pre-built templates
+    this.TEMPLATES = {
+      'pre-market': {
+        name: '📈 Pre-Market Scan',
+        icon: '📈',
+        color: 'blue',
+        urls: [
+          'https://www.tradingview.com/chart/',
+          'https://www.finviz.com/screener.ashx',
+          'https://finance.yahoo.com/markets/',
+          'https://www.forexfactory.com/calendar',
+          'https://www.investing.com/economic-calendar/',
+          'https://www.reuters.com/markets/',
+          'https://www.cnbc.com/pre-markets/'
+        ],
+        defaultRefresh: 300
+      },
+      'market-live': {
+        name: '🔴 Market Live',
+        icon: '🔴',
+        color: 'red',
+        urls: [
+          'https://www.tradingview.com/chart/',
+          'https://www.finviz.com/heatmap.ashx',
+          'https://finance.yahoo.com/most-active/',
+          'https://www.cnbc.com/live-market/',
+          'https://www.bloomberg.com/markets',
+          'https://www.reuters.com/markets/us/',
+          'https://seekingalpha.com/market-news',
+          'https://stocktwits.com/stream'
+        ],
+        defaultRefresh: 60
+      },
+      'news-wire': {
+        name: '📰 News Wire',
+        icon: '📰',
+        color: 'orange',
+        urls: [
+          'https://www.reuters.com/',
+          'https://www.bloomberg.com/',
+          'https://www.cnbc.com/world/',
+          'https://www.wsj.com/news/markets',
+          'https://www.ft.com/markets',
+          'https://www.marketwatch.com/'
+        ],
+        defaultRefresh: 60
+      },
+      'crypto-watch': {
+        name: '🦐 Crypto Watch',
+        icon: '🦐',
+        color: 'purple',
+        urls: [
+          'https://www.coingecko.com/',
+          'https://coinmarketcap.com/',
+          'https://dexscreener.com/',
+          'https://www.tradingview.com/crypto/',
+          'https://www.coinglass.com/'
+        ],
+        defaultRefresh: 30
+      },
+      'weekend-research': {
+        name: '📋 Weekend Research',
+        icon: '📋',
+        color: 'green',
+        urls: [
+          'https://www.sec.gov/cgi-bin/browse-edgar',
+          'https://seekingalpha.com/stock-ideas',
+          'https://www.tipranks.com/',
+          'https://www.macrotrends.net/',
+          'https://www.gurufocus.com/'
+        ],
+        defaultRefresh: 0
+      }
+    };
+  }
+
+  generateId() {
+    return `lg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  }
+
+  // Get site intelligence for a URL
+  getSiteIntel(url) {
+    try {
+      const hostname = new URL(url).hostname;
+      for (const [domain, intel] of Object.entries(this.SITE_INTELLIGENCE)) {
+        if (hostname.includes(domain)) return intel;
+      }
+    } catch {}
+    return { refresh: 0, pinned: false, category: 'other' };
+  }
+
+  // Create a launch group from user input
+  createGroup(name, icon, color, rawUrls, defaultRefresh = 0) {
+    const urls = rawUrls.map((urlStr, i) => {
+      const trimmed = urlStr.trim();
+      const intel = this.getSiteIntel(trimmed);
+      return {
+        url: trimmed,
+        title: '',
+        pinned: intel.pinned,
+        autoRefresh: intel.refresh > 0,
+        refreshInterval: intel.refresh || defaultRefresh,
+        order: i
+      };
+    });
+
+    return {
+      id: this.generateId(),
+      name: name,
+      icon: icon || '🚀',
+      color: color || 'blue',
+      urls: urls,
+      defaultRefresh: defaultRefresh,
+      schedule: { enabled: false, time: '', days: [], autoClose: false, autoCloseAfter: null },
+      createdAt: Date.now(),
+      lastLaunched: null,
+      launchCount: 0
+    };
+  }
+
+  // Create from template
+  createFromTemplate(templateKey) {
+    const tpl = this.TEMPLATES[templateKey];
+    if (!tpl) return null;
+
+    const group = this.createGroup(tpl.name, tpl.icon, tpl.color, tpl.urls, tpl.defaultRefresh);
+    return group;
+  }
+
+  // Save a launch group
+  async saveGroup(group) {
+    const { launchGroups } = await chrome.storage.local.get('launchGroups');
+    const groups = launchGroups || {};
+    groups[group.id] = group;
+    await chrome.storage.local.set({ launchGroups: groups });
+    return group;
+  }
+
+  // Get all groups
+  async getAllGroups() {
+    const { launchGroups } = await chrome.storage.local.get('launchGroups');
+    const groups = launchGroups || {};
+    return Object.values(groups).sort((a, b) => (b.lastLaunched || b.createdAt) - (a.lastLaunched || a.createdAt));
+  }
+
+  // Get single group
+  async getGroup(id) {
+    const { launchGroups } = await chrome.storage.local.get('launchGroups');
+    return (launchGroups || {})[id];
+  }
+
+  // Delete group
+  async deleteGroup(id) {
+    const { launchGroups } = await chrome.storage.local.get('launchGroups');
+    const groups = launchGroups || {};
+    delete groups[id];
+    await chrome.storage.local.set({ launchGroups: groups });
+    // Remove any scheduled alarm for this group
+    chrome.alarms.clear(`launch-${id}`);
+    chrome.alarms.clear(`refresh-${id}`);
+  }
+
+  // Update group
+  async updateGroup(id, updates) {
+    const { launchGroups } = await chrome.storage.local.get('launchGroups');
+    const groups = launchGroups || {};
+    if (groups[id]) {
+      groups[id] = { ...groups[id], ...updates };
+      await chrome.storage.local.set({ launchGroups: groups });
+    }
+  }
+
+  // Launch all URLs in a group
+  async launchGroup(groupId, options = {}) {
+    const group = await this.getGroup(groupId);
+    if (!group) throw new Error('Launch group not found');
+
+    let targetWindowId;
+
+    if (options.newWindow) {
+      const newWindow = await chrome.windows.create({ focused: true });
+      targetWindowId = newWindow.id;
+      // Close default blank tab
+      const [defaultTab] = await chrome.tabs.query({ windowId: targetWindowId });
+      if (defaultTab && defaultTab.url === 'chrome://newtab/') {
+        await chrome.tabs.remove(defaultTab.id);
+      }
+    } else {
+      const [currentTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      targetWindowId = currentTab.windowId;
+
+      if (options.replace) {
+        const currentTabs = await chrome.tabs.query({ windowId: targetWindowId });
+        const unpinnedTabs = currentTabs.filter(t => !t.pinned);
+        if (unpinnedTabs.length > 0) {
+          await chrome.tabs.remove(unpinnedTabs.map(t => t.id));
+        }
+      }
+    }
+
+    // Check for existing tabs with same URLs (skip duplicates)
+    const existingTabs = await chrome.tabs.query({ windowId: targetWindowId });
+    const existingUrls = new Set(existingTabs.map(t => t.url));
+
+    const createdTabs = [];
+    for (const urlEntry of group.urls) {
+      const url = urlEntry.url;
+
+      // Skip if already open and skipDuplicates is on
+      if (options.skipDuplicates !== false && existingUrls.has(url)) {
+        const existingTab = existingTabs.find(t => t.url === url);
+        if (existingTab) {
+          createdTabs.push(existingTab);
+          continue;
+        }
+      }
+
+      try {
+        const tab = await chrome.tabs.create({
+          url: url,
+          pinned: urlEntry.pinned || false,
+          active: false,
+          windowId: targetWindowId
+        });
+        createdTabs.push(tab);
+      } catch (error) {
+        console.error(`Failed to launch: ${url}`, error);
+      }
+    }
+
+    // Group all launched tabs into a Chrome tab group
+    if (createdTabs.length >= 2) {
+      try {
+        const chromeGroupId = await chrome.tabs.group({
+          tabIds: createdTabs.map(t => t.id)
+        });
+        await chrome.tabGroups.update(chromeGroupId, {
+          title: `${group.icon} ${group.name}`,
+          color: group.color,
+          collapsed: false
+        });
+      } catch (error) {
+        console.error('Failed to create tab group:', error);
+      }
+    }
+
+    // Update last launched & count
+    await this.updateGroup(groupId, {
+      lastLaunched: Date.now(),
+      launchCount: (group.launchCount || 0) + 1
+    });
+
+    // Set up auto-refresh if configured
+    if (group.defaultRefresh > 0) {
+      await this.startAutoRefresh(groupId);
+    }
+
+    // Update analytics
+    await this.storage.incrementAnalytic('totalLaunches');
+
+    return { success: true, tabCount: createdTabs.length, groupName: group.name };
+  }
+
+  // Auto-refresh: set up alarm for group
+  async startAutoRefresh(groupId) {
+    const group = await this.getGroup(groupId);
+    if (!group) return;
+
+    // Clear existing alarm
+    await chrome.alarms.clear(`refresh-${groupId}`);
+
+    // Find shortest refresh interval in group
+    const intervals = group.urls
+      .filter(u => u.autoRefresh && u.refreshInterval > 0)
+      .map(u => u.refreshInterval);
+
+    if (intervals.length === 0) return;
+
+    const minInterval = Math.max(1, Math.min(...intervals) / 60); // convert secs to mins, min 1
+    chrome.alarms.create(`refresh-${groupId}`, { periodInMinutes: minInterval });
+  }
+
+  // Refresh all tabs in a group NOW
+  async refreshGroupNow(groupId) {
+    const group = await this.getGroup(groupId);
+    if (!group) return { refreshedCount: 0 };
+
+    const groupUrls = new Set(group.urls.map(u => u.url));
+    const allTabs = await chrome.tabs.query({});
+    const groupTabs = allTabs.filter(t => groupUrls.has(t.url));
+
+    let refreshedCount = 0;
+    for (const tab of groupTabs) {
+      try {
+        await chrome.tabs.reload(tab.id);
+        refreshedCount++;
+      } catch (error) {
+        console.error('Failed to refresh tab:', tab.id, error);
+      }
+    }
+
+    return { refreshedCount };
+  }
+
+  // Refresh only auto-refresh-enabled URLs in a group
+  async refreshGroupAuto(groupId) {
+    const group = await this.getGroup(groupId);
+    if (!group) return;
+
+    const refreshUrls = new Set(
+      group.urls.filter(u => u.autoRefresh && u.refreshInterval > 0).map(u => u.url)
+    );
+
+    if (refreshUrls.size === 0) return;
+
+    const allTabs = await chrome.tabs.query({});
+    const tabsToRefresh = allTabs.filter(t => refreshUrls.has(t.url) && !t.active);
+
+    for (const tab of tabsToRefresh) {
+      try {
+        await chrome.tabs.reload(tab.id);
+      } catch (error) {
+        console.error('Auto-refresh failed:', tab.id, error);
+      }
+    }
+  }
+
+  // Pause all auto-refresh
+  async pauseAllRefresh() {
+    const groups = await this.getAllGroups();
+    for (const group of groups) {
+      await chrome.alarms.clear(`refresh-${group.id}`);
+    }
+  }
+
+  // Resume all auto-refresh
+  async resumeAllRefresh() {
+    const groups = await this.getAllGroups();
+    for (const group of groups) {
+      if (group.defaultRefresh > 0) {
+        await this.startAutoRefresh(group.id);
+      }
+    }
+  }
+
+  // Get available templates
+  getTemplates() {
+    return Object.entries(this.TEMPLATES).map(([key, tpl]) => ({
+      key,
+      ...tpl,
+      urlCount: tpl.urls.length
+    }));
+  }
+
+  // Import group from JSON
+  importGroup(jsonString) {
+    try {
+      const data = JSON.parse(jsonString);
+      if (!data.name || !data.urls || !Array.isArray(data.urls)) {
+        throw new Error('Invalid format: need name and urls array');
+      }
+      const rawUrls = data.urls.map(u => typeof u === 'string' ? u : u.url);
+      const group = this.createGroup(
+        data.name, data.icon, data.color, rawUrls,
+        data.defaultRefresh || 0
+      );
+      if (data.schedule) group.schedule = { ...group.schedule, ...data.schedule };
+      return group;
+    } catch (error) {
+      throw new Error(`Import failed: ${error.message}`);
+    }
+  }
+
+  // Export group as JSON
+  async exportGroup(id) {
+    const group = await this.getGroup(id);
+    if (!group) throw new Error('Group not found');
+    return JSON.stringify({
+      name: group.name,
+      icon: group.icon,
+      color: group.color,
+      urls: group.urls.map(u => u.url),
+      defaultRefresh: group.defaultRefresh,
+      schedule: group.schedule
+    }, null, 2);
   }
 }
 
@@ -502,6 +924,7 @@ class TabsManager {
 const storage = new StorageManager();
 const workspaceManager = new WorkspaceManager(storage);
 const tabsManager = new TabsManager();
+const launchGroupManager = new LaunchGroupManager(storage);
 
 // ============================================================================
 // Extension lifecycle
@@ -536,23 +959,51 @@ chrome.runtime.onStartup.addListener(async () => {
 // ============================================================================
 // Command handlers
 // ============================================================================
-chrome.commands.onCommand.addListener(async (command) => {
-  const [currentTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+chrome.commands.onCommand.addListener((command) => {
+  // Handle commands that need side panel
+  const sidePanelCommands = ['open-sidepanel', 'search-tabs', 'quick-save', 'quick-launch'];
 
-  switch (command) {
-    case 'open-sidepanel':
-      await chrome.sidePanel.open({ windowId: currentTab.windowId });
-      break;
+  if (sidePanelCommands.includes(command)) {
+    // Query for active tabs synchronously using callback style to preserve gesture
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      const windowId = tabs?.[0]?.windowId;
+      if (windowId) {
+        chrome.sidePanel.open({ windowId }).catch(err => {
+          console.error('sidePanel.open() failed:', err);
+        });
+      }
+    });
 
-    case 'search-tabs':
-      await chrome.sidePanel.open({ windowId: currentTab.windowId });
+    // Send messages that need to reach the sidepanel
+    if (command === 'search-tabs') {
       chrome.runtime.sendMessage({ type: 'FOCUS_SEARCH' });
-      break;
-
-    case 'quick-save':
-      await chrome.sidePanel.open({ windowId: currentTab.windowId });
+    } else if (command === 'quick-save') {
       chrome.runtime.sendMessage({ type: 'SHOW_SAVE_DIALOG' });
-      break;
+    } else if (command === 'quick-launch') {
+      chrome.runtime.sendMessage({ type: 'SHOW_LAUNCH_PICKER' });
+    }
+  }
+
+  // Handle commands that don't need side panel
+  if (command === 'refresh-all') {
+    storage.getSettings().then(async (settings) => {
+      const groups = await launchGroupManager.getAllGroups();
+      for (const g of groups) {
+        if (g.defaultRefresh > 0) {
+          await launchGroupManager.refreshGroupNow(g.id);
+        }
+      }
+    });
+  } else if (command === 'pause-refresh') {
+    storage.getSettings().then(async (settings) => {
+      if (settings.refreshPaused) {
+        await launchGroupManager.resumeAllRefresh();
+        await storage.updateSettings({ refreshPaused: false });
+      } else {
+        await launchGroupManager.pauseAllRefresh();
+        await storage.updateSettings({ refreshPaused: true });
+      }
+    });
   }
 });
 
@@ -565,6 +1016,18 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     if (settings.hibernateEnabled) {
       await tabsManager.hibernateInactiveTabs(settings.hibernateAfter);
     }
+  }
+
+  // Auto-refresh for launch groups
+  if (alarm.name.startsWith('refresh-')) {
+    const groupId = alarm.name.replace('refresh-', '');
+    await launchGroupManager.refreshGroupAuto(groupId);
+  }
+
+  // Scheduled launch for groups
+  if (alarm.name.startsWith('launch-')) {
+    const groupId = alarm.name.replace('launch-', '');
+    await launchGroupManager.launchGroup(groupId, { newWindow: false, replace: false, skipDuplicates: true });
   }
 });
 
@@ -643,6 +1106,67 @@ async function handleMessage(message, sender) {
     case 'GET_ANALYTICS':
       return { analytics: await storage.getAnalytics() };
 
+    // ── Launch Group handlers ──
+    case 'GET_LAUNCH_GROUPS':
+      return { groups: await launchGroupManager.getAllGroups() };
+
+    case 'GET_LAUNCH_GROUP':
+      return { group: await launchGroupManager.getGroup(message.groupId) };
+
+    case 'SAVE_LAUNCH_GROUP':
+      const newGroup = launchGroupManager.createGroup(
+        message.name, message.icon, message.color,
+        message.urls, message.defaultRefresh || 0
+      );
+      await launchGroupManager.saveGroup(newGroup);
+      return { group: newGroup };
+
+    case 'CREATE_FROM_TEMPLATE':
+      const tplGroup = launchGroupManager.createFromTemplate(message.templateKey);
+      if (!tplGroup) throw new Error('Template not found');
+      await launchGroupManager.saveGroup(tplGroup);
+      return { group: tplGroup };
+
+    case 'UPDATE_LAUNCH_GROUP':
+      await launchGroupManager.updateGroup(message.groupId, message.updates);
+      return { success: true };
+
+    case 'DELETE_LAUNCH_GROUP':
+      await launchGroupManager.deleteGroup(message.groupId);
+      return { success: true };
+
+    case 'LAUNCH_GROUP':
+      const launchResult = await launchGroupManager.launchGroup(message.groupId, {
+        newWindow: message.newWindow || false,
+        replace: message.replace || false,
+        skipDuplicates: message.skipDuplicates !== false
+      });
+      return launchResult;
+
+    case 'REFRESH_GROUP_NOW':
+      const refreshResult = await launchGroupManager.refreshGroupNow(message.groupId);
+      return refreshResult;
+
+    case 'PAUSE_ALL_REFRESH':
+      await launchGroupManager.pauseAllRefresh();
+      return { success: true };
+
+    case 'RESUME_ALL_REFRESH':
+      await launchGroupManager.resumeAllRefresh();
+      return { success: true };
+
+    case 'GET_TEMPLATES':
+      return { templates: launchGroupManager.getTemplates() };
+
+    case 'EXPORT_LAUNCH_GROUP':
+      const exported = await launchGroupManager.exportGroup(message.groupId);
+      return { json: exported };
+
+    case 'IMPORT_LAUNCH_GROUP':
+      const imported = launchGroupManager.importGroup(message.jsonString);
+      await launchGroupManager.saveGroup(imported);
+      return { group: imported };
+
     default:
       throw new Error(`Unknown message type: ${message.type}`);
   }
@@ -690,6 +1214,7 @@ chrome.runtime.onInstalled.addListener(() => {
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId === 'save-current-workspace') {
+    // sidePanel.open() must be called with user gesture context preserved
     await chrome.sidePanel.open({ windowId: tab.windowId });
     chrome.runtime.sendMessage({ type: 'SHOW_SAVE_DIALOG' });
   } else if (info.menuItemId === 'auto-group-tabs') {
