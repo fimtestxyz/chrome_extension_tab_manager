@@ -1,0 +1,139 @@
+name: Validate Extension
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  validate:
+    name: Validate Extension Structure
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Validate manifest.json
+        run: |
+          echo "🔍 Validating manifest.json..."
+          if [ ! -f "manifest.json" ]; then
+            echo "❌ manifest.json not found"
+            exit 1
+          fi
+
+          # Check JSON syntax
+          if ! python -m json.tool manifest.json > /dev/null; then
+            echo "❌ Invalid JSON in manifest.json"
+            exit 1
+          fi
+
+          # Check required fields
+          REQUIRED_FIELDS=(
+            "manifest_version"
+            "name"
+            "version"
+            "description"
+            "permissions"
+            "action"
+            "background"
+            "icons"
+          )
+
+          for field in "${REQUIRED_FIELDS[@]}"; do
+            if ! grep -q "\"$field\"" manifest.json; then
+              echo "❌ Missing required field: $field"
+              exit 1
+            fi
+          done
+
+          echo "✅ manifest.json is valid"
+
+      - name: Check required files
+        run: |
+          echo "🔍 Checking required files..."
+
+          REQUIRED_FILES=(
+            "manifest.json"
+            "background/service-worker.js"
+            "popup/popup.html"
+            "sidepanel/sidepanel.html"
+          )
+
+          MISSING=0
+          for file in "${REQUIRED_FILES[@]}"; do
+            if [ ! -f "$file" ]; then
+              echo "❌ Missing: $file"
+              MISSING=1
+            fi
+          done
+
+          if [ $MISSING -eq 1 ]; then
+            exit 1
+          fi
+
+          echo "✅ All required files present"
+
+      - name: Validate icon dimensions
+        run: |
+          echo "🔍 Validating icons..."
+
+          if ! python -c "from PIL import Image" 2>/dev/null; then
+            pip install Pillow
+          fi
+
+          python -c "
+          from PIL import Image
+          import sys
+          import os
+
+          ICONS = {
+            'assets/icons/icon-16.png': (16, 16),
+            'assets/icons/icon-32.png': (32, 32),
+            'assets/icons/icon-48.png': (48, 48),
+            'assets/icons/icon-128.png': (128, 128),
+          }
+
+          invalid = False
+          for icon_path, expected_size in ICONS.items():
+            if not os.path.exists(icon_path):
+              print(f'⚠️  Missing icon: {icon_path}')
+              continue
+
+            try:
+              img = Image.open(icon_path)
+              if img.size != expected_size:
+                print(f'❌ {icon_path}: Expected {expected_size}, got {img.size}')
+                invalid = True
+              else:
+                print(f'✅ {icon_path}: {img.size}')
+            except Exception as e:
+              print(f'❌ {icon_path}: Error - {e}')
+              invalid = True
+
+          if invalid:
+            sys.exit(1)
+          "
+
+      - name: Build extension (dry run)
+        run: |
+          chmod +x build.sh
+          ./build.sh
+          ls -lh build/
+          echo "✅ Build successful"
+
+      - name: Build summary
+        run: |
+          echo "# ✅ Extension Validation Passed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "All checks passed:" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ manifest.json valid" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Required files present" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Icons valid" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Build successful" >> $GITHUB_STEP_SUMMARY

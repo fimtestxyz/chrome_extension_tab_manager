@@ -6,10 +6,26 @@ set -e
 echo "🔨 Building Tab Workspace Manager Extension..."
 echo ""
 
-# Extension directory
-EXT_DIR="/Volumes/wwk_nvme/Users/wwkoon/.openclaw/workspace/chrome_extension_tab_manager"
+# Extension directory - detect script location
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+EXT_DIR="$SCRIPT_DIR"
 BUILD_DIR="$EXT_DIR/build"
-ZIP_NAME="tab-workspace-manager.zip"
+
+# Get extension version from manifest.json or argument
+VERSION_ARG="${1:-}"
+if [ -n "$VERSION_ARG" ]; then
+  VERSION="$VERSION_ARG"
+else
+  VERSION=$(grep -o '"version"[[:space:]]*:[[:space:]]*"[0-9.]*"' "$EXT_DIR/manifest.json" | sed 's/.*"\([0-9.]*\)".*/\1/')
+fi
+
+TAG="${2:-v${VERSION}}"
+ZIP_NAME="tab-workspace-manager-${TAG}.zip"
+CRX_NAME="tab-workspace-manager-crx-${TAG}.crx"
+
+echo "📌 Version: $VERSION"
+echo "🏷️  Tag: $TAG"
+echo ""
 
 # Clean previous build
 if [ -d "$BUILD_DIR" ]; then
@@ -44,17 +60,30 @@ echo ""
 echo "📦 Creating distribution package..."
 cd "$BUILD_DIR"
 zip -r "../$ZIP_NAME" . -x "*.DS_Store" "*.git*"
-cd ..
+cd "$EXT_DIR"
 
 echo "✅ Created $ZIP_NAME"
 echo ""
+
+# Generate CRX if Node.js is available and requested
+if command -v node &> /dev/null && [ "$GENERATE_CRX" = "true" ]; then
+  echo "📦 Generating CRX package..."
+  node generate-crx.js "${TAG}"
+fi
+
+# Generate checksum
+echo "🔐 Generating SHA256 checksum..."
+sha256sum "$ZIP_NAME" > "$ZIP_NAME.sha256"
 
 # Summary
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "✨ Build complete!"
 echo ""
-echo "📁 Build output: $BUILD_DIR"
-echo "📦 Distribution: $EXT_DIR/$ZIP_NAME"
+echo "📌 Version:   $VERSION"
+echo "🏷️  Tag:       $TAG"
+echo "📁 Build dir: $BUILD_DIR"
+echo "📦 Package:   $EXT_DIR/$ZIP_NAME"
+echo "🔐 Checksum:  $EXT_DIR/$ZIP_NAME.sha256"
 echo ""
 echo "🚀 Next steps:"
 echo "   1. Open Chrome and go to chrome://extensions/"
@@ -64,4 +93,7 @@ echo "   4. The extension will be installed and ready to use!"
 echo ""
 echo "📤 To publish to Chrome Web Store:"
 echo "   Upload: $EXT_DIR/$ZIP_NAME"
+echo ""
+echo "💡 For CRX generation (signed package):"
+echo "   Run: GENERATE_CRX=true ./build.sh [VERSION]"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

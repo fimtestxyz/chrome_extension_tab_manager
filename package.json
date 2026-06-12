@@ -1,0 +1,22 @@
+{
+  "name": "tab-workspace-manager",
+  "version": "1.0.0",
+  "description": "Organize, group, and save browser tabs into workspaces. Switch contexts instantly and boost productivity.",
+  "private": true,
+  "scripts": {
+    "build": "./build.sh",
+    "build:crx": "GENERATE_CRX=true ./build.sh",
+    "crx": "node generate-crx.js",
+    "test": "echo \"No tests yet\"",
+    "clean": "rm -rf build tab-workspace-manager-*.zip tab-workspace-manager-*.crx *.sha256"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yourusername/tab-workspace-manager.git"
+  },
+  "author": "Your Name",
+  "license": "MIT",
+  "devDependencies": {
+    "crx": "^5.0.1"
+  }
+}

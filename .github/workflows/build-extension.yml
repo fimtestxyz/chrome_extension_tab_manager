@@ -1,0 +1,160 @@
+name: Build Chrome Extension
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag version (e.g., v1.0.0)'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build Extension Package
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies for Web Crypto (for CRX generation)
+        run: npm install -g @crx-js/vite-plugin crx@latest
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies (for icon generation)
+        run: |
+          python -m pip install --upgrade pip
+          pip install Pillow
+
+      - name: Generate icons (if needed)
+        run: |
+          if [ ! -f assets/icons/icon-128.png ]; then
+            echo "Generating icons..."
+            python generate_icons.py
+          else
+            echo "Icons already exist"
+          fi
+
+      - name: Build extension
+        id: build
+        run: |
+          chmod +x build.sh generate-crx.js
+          ./build.sh
+
+      - name: Get version
+        id: version
+        run: |
+          VERSION=$(grep -o '"version"[[:space:]]*:[[:space:]]*"[0-9.]*"' manifest.json | sed 's/.*"\([0-9.]*\)".*/\1/')
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ github.event.inputs.tag }}"
+            if [ -z "$TAG" ]; then
+              TAG="v${VERSION}-${date +%Y%m%d}"
+            fi
+          elif [ "${{ github.event_name }}" = "push" ]; then
+            TAG="${GITHUB_REF#refs/tags/}"
+          else
+            TAG="v${VERSION}"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "Extension version: $VERSION"
+          echo "Release tag: $TAG"
+
+      - name: Rename ZIP with version
+        run: |
+          if [ -f tab-workspace-manager.zip ]; then
+            mv tab-workspace-manager.zip "tab-workspace-manager-${{ steps.version.outputs.tag }}.zip"
+          fi
+
+      - name: Generate update manifest
+        run: |
+          cat > update-manifest.xml <<EOF
+          <?xml version='1.0' encoding='UTF-8'?>
+          <gupdate xmlns='http://www.google.com/update2/response' protocol='2.0'>
+            <app appid='YOUR_EXTENSION_ID_HERE'>
+              <updatecheck codebase='https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag }}/tab-workspace-manager-${{ steps.version.outputs.tag }}.zip' version='${{ steps.version.outputs.version }}' />
+            </app>
+          </gupdate>
+          EOF
+
+      - name: Build CRX package (ZIP-based for direct install)
+        run: |
+          chmod +x generate-crx.js
+          node generate-crx.js "${{ steps.version.outputs.tag }}"
+
+      - name: Generate checksum
+        run: |
+          sha256sum "tab-workspace-manager-${{ steps.version.outputs.tag }}.zip" > "tab-workspace-manager-${{ steps.version.outputs.tag }}.zip.sha256"
+          ls -lh tab-workspace-manager-*
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: chrome-extension-${{ steps.version.outputs.tag }}
+          path: |
+            tab-workspace-manager-*.zip*
+            tab-workspace-manager-*.crx*
+            update-manifest.xml
+          retention-days: 90
+
+      - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            tab-workspace-manager-*.zip*
+            tab-workspace-manager-*.crx*
+            update-manifest.xml
+          body: |
+            ## Release ${{ steps.version.outputs.tag }}
+
+            ### Installation
+
+            **Chrome Web Store (recommended):**
+            1. Upload `tab-workspace-manager-${{ steps.version.outputs.tag }}.zip` to the Chrome Web Store Developer Dashboard
+
+            **Direct CRX installation:**
+            1. Download `tab-workspace-manager-${{ steps.version.outputs.tag }}.crx`
+            2. Open Chrome and install by dragging the file to the extensions page
+
+            **Local development:**
+            1. Download `tab-workspace-manager-${{ steps.version.outputs.tag }}.zip`
+            2. Extract and load as unpacked extension in Chrome DevTools
+
+            ### Checksum
+            SHA256: See corresponding `.sha256` file
+
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build Summary
+        run: |
+          echo "# Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Extension built Successfully!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Version: ${{ steps.version.outputs.tag }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Artifacts" >> $GITHUB_STEP_SUMMARY
+          echo "* \`tab-workspace-manager-${{ steps.version.outputs.tag }}.zip\` - Chrome Web Store upload" >> $GITHUB_STEP_SUMMARY
+          echo "* \`tab-workspace-manager-${{ steps.version.outputs.tag }}.crx\` - Direct CRX package" >> $GITHUB_STEP_SUMMARY
+          echo "* \`update-manifest.xml\` - Auto-update manifest" >> $GITHUB_STEP_SUMMARY

@@ -1,6 +1,20 @@
 # Build output
 build/
+
+# Distribution packages
 *.zip
+*.crx
+*.sha256
+update-manifest.xml
+
+# Node modules (if using npm)
+node_modules/
+package-lock.json
+
+# Secrets for CRX signing
+/private-key.pem
+*.pem
+secrets/
 
 # Python
 .venv/
