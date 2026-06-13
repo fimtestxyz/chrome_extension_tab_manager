@@ -71,17 +71,20 @@ jobs:
           echo "Extension version: $VERSION"
           echo "Release tag: $TAG"
 
-      - name: Versioned ZIP for Chrome Web Store
+      - name: Ensure versioned ZIP exists
         run: |
-          ZIP_NAME="tab-workspace-manager-${{ steps.version.outputs.tag }}.zip"
-          if [ -f tab-workspace-manager-v*.zip ]; then
-            mv tab-workspace-manager-v*.zip "$ZIP_NAME"
+          TAG="${{ steps.version.outputs.tag }}"
+          TARGET="tab-workspace-manager-${TAG}.zip"
+          # build.sh may have already created it with the tag name
+          if [ -f "$TARGET" ]; then
+            echo "✅ ZIP already named correctly: $TARGET"
           elif [ -f tab-workspace-manager.zip ]; then
-            mv tab-workspace-manager.zip "$ZIP_NAME"
+            mv tab-workspace-manager.zip "$TARGET"
+            echo "📦 Renamed to $TARGET"
           else
-            cd build && zip -r "../$ZIP_NAME" . -x "*.DS_Store" "*.git*"
+            cd build && zip -r "../$TARGET" . -x "*.DS_Store" "*.git*"
+            echo "📦 Created $TARGET from build dir"
           fi
-          echo "📦 Created $ZIP_NAME"
 
       - name: Build CRX package
         run: |
