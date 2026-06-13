@@ -131,8 +131,9 @@ jobs:
             1. Upload `tab-workspace-manager-${{ steps.version.outputs.tag }}.zip` to the Chrome Web Store Developer Dashboard
 
             **Direct CRX installation:**
-            1. Download `tab-workspace-manager-${{ steps.version.outputs.tag }}.crx`
-            2. Open Chrome and install by dragging the file to the extensions page
+            1. Download `tab-workspace-manager-crx-${{ steps.version.outputs.tag }}.crx`
+            2. Open Chrome → `chrome://extensions/` → Enable Developer Mode
+            3. Drag the `.crx` file onto the extensions page
 
             **Local development:**
             1. Download `tab-workspace-manager-${{ steps.version.outputs.tag }}.zip`
